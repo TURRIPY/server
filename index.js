@@ -10,7 +10,27 @@ let serverMessages = {};
 // { "serverId": { "username": lastSeenTimestamp } }
 let onlineUsers = {};
 
-const ONLINE_TIMEOUT_MS = 15000;
+const ONLINE_TIMEOUT_MS  = 15000;  // 15 сек без heartbeat = оффлайн
+const CLEANUP_INTERVAL_MS = 60000; // проверка каждую минуту
+const IDLE_CLEANUP_MS     = 5 * 60 * 1000; // чистим сервер если пуст 5+ минут
+
+// ─── Автоочистка пустых серверов ─────────────────────────────────────────────
+setInterval(() => {
+    const now = Date.now();
+    for (const serverId of Object.keys(serverMessages)) {
+        const users = onlineUsers[serverId] || {};
+        const hasActive = Object.values(users).some(ts => now - ts < ONLINE_TIMEOUT_MS);
+        if (hasActive) continue;
+
+        // Нет активных — смотрим когда последний раз кто-то был
+        const lastSeen = Math.max(0, ...Object.values(users));
+        if (lastSeen === 0 || now - lastSeen > IDLE_CLEANUP_MS) {
+            delete serverMessages[serverId];
+            delete onlineUsers[serverId];
+            console.log(`[cleanup] Cleared idle server: ${serverId}`);
+        }
+    }
+}, CLEANUP_INTERVAL_MS);
 
 // ─── Heartbeat: клиент пингует каждые ~8 секунд ───────────────────────────────
 app.post('/heartbeat', (req, res) => {

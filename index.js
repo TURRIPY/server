@@ -2,15 +2,17 @@ const express = require('express');
 const app = express();
 app.use(express.json());
 
+const SERVER_START_TIME = Date.now();
+
 // { "serverId": [ {id, user, msg}, ... ] }
 let serverMessages = {};
 
 // { "serverId": { "username": lastSeenTimestamp } }
 let onlineUsers = {};
 
-const ONLINE_TIMEOUT_MS = 15000; // 15 sec without heartbeat = OFFLINE
+const ONLINE_TIMEOUT_MS = 15000;
 
-// ─── Heartbeat: ~8 sec ───────────────────────────────
+// ─── Heartbeat: клиент пингует каждые ~8 секунд ───────────────────────────────
 app.post('/heartbeat', (req, res) => {
     const { user, serverId } = req.body;
     if (!user || !serverId) return res.status(400).json({ error: "Missing data" });
@@ -21,14 +23,14 @@ app.post('/heartbeat', (req, res) => {
     res.status(200).json({ success: true });
 });
 
-// ─── Send ────────────────────────────────────────────────────────
+// ─── Отправка сообщения ────────────────────────────────────────────────────────
 app.post('/send', (req, res) => {
     const { user, msg, serverId } = req.body;
     if (!user || !msg || !serverId) return res.status(400).json({ error: "Missing data" });
 
     if (!serverMessages[serverId]) serverMessages[serverId] = [];
 
-    // Updating online when new message too
+    // Обновляем онлайн при каждом сообщении тоже
     if (!onlineUsers[serverId]) onlineUsers[serverId] = {};
     onlineUsers[serverId][user] = Date.now();
 
@@ -44,7 +46,7 @@ app.post('/send', (req, res) => {
     res.status(200).json({ success: true });
 });
 
-// ─── History ────────────────────────────────────────────────────────
+// ─── История сообщений ────────────────────────────────────────────────────────
 app.get('/history', (req, res) => {
     const serverId = req.query.serverId;
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
@@ -53,7 +55,7 @@ app.get('/history', (req, res) => {
     res.json(history);
 });
 
-// ─── Online ──────────────────────────────────────────
+// ─── Онлайн пользователи на сервере ──────────────────────────────────────────
 app.get('/online', (req, res) => {
     const serverId = req.query.serverId;
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
@@ -67,7 +69,7 @@ app.get('/online', (req, res) => {
     res.json({ count: active.length, users: active });
 });
 
-// ─── Status ───────────────────────────────────────────────────────
+// ─── Статистика сервера ───────────────────────────────────────────────────────
 app.get('/status', (req, res) => {
     const serverId = req.query.serverId;
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
@@ -79,11 +81,15 @@ app.get('/status', (req, res) => {
         .map(([name]) => name);
 
     const msgCount = (serverMessages[serverId] || []).length;
+    const uptimeSeconds = Math.floor((now - SERVER_START_TIME) / 1000);
+    const totalServers = Object.keys(serverMessages).length;
 
     res.json({
         serverId: serverId,
         onlineCount: activeUsers.length,
-        messageCount: msgCount
+        messageCount: msgCount,
+        uptimeSeconds: uptimeSeconds,
+        totalServers: totalServers
     });
 });
 

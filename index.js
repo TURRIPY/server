@@ -66,7 +66,6 @@ setInterval(() => {
 
 // ─── Heartbeat: клиент пингует каждые ~8 секунд ───────────────────────────────
 app.post('/heartbeat', (req, res) => {
-    if (!checkSecret(req, res)) return;
     if (!rateLimit(req, res)) return;
     const user     = sanitize(req.body.user, 50);
     const serverId = sanitize(req.body.serverId, 100);
@@ -79,7 +78,6 @@ app.post('/heartbeat', (req, res) => {
 
 // ─── Отправка сообщения ────────────────────────────────────────────────────────
 app.post('/send', (req, res) => {
-    if (!checkSecret(req, res)) return;
     if (!rateLimit(req, res)) return;
     const user     = sanitize(req.body.user, 50);
     const msg      = sanitize(req.body.msg, 500);
@@ -103,7 +101,6 @@ app.post('/send', (req, res) => {
 
 // ─── История сообщений ────────────────────────────────────────────────────────
 app.get('/history', (req, res) => {
-    if (!checkSecret(req, res)) return;
     if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
@@ -112,7 +109,6 @@ app.get('/history', (req, res) => {
 
 // ─── Онлайн пользователи на сервере ──────────────────────────────────────────
 app.get('/online', (req, res) => {
-    if (!checkSecret(req, res)) return;
     if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
@@ -127,7 +123,6 @@ app.get('/online', (req, res) => {
 
 // ─── Статистика сервера ───────────────────────────────────────────────────────
 app.get('/status', (req, res) => {
-    if (!checkSecret(req, res)) return;
     if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
     if (!serverId) return res.status(400).json({ error: "serverId is required" });

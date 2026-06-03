@@ -4,9 +4,9 @@ app.use(express.json());
 
 const SERVER_START_TIME = Date.now();
 
-// ─── Rate limiting — не более 30 запросов в минуту с одного IP ───────────────
+// ─── Rate limiting — увеличено до 500 запросов в минуту с одного IP ──────────
 const rateLimitMap = {};
-const RATE_LIMIT   = 30;
+const RATE_LIMIT   = 500; 
 const RATE_WINDOW  = 60 * 1000;
 
 function rateLimit(req, res) {

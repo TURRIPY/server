@@ -1,39 +1,29 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const app = express();
 app.use(express.json());
 
 const SERVER_START_TIME = Date.now();
 
-// ─── Rate limiting ───────────────────────────────────────────────────────────
-const rateLimitMap = {};
-const RATE_LIMIT   = 500; 
-const RATE_WINDOW  = 60 * 1000;
-
-function rateLimit(req, res) {
-    const ip  = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-    const now = Date.now();
-    if (!rateLimitMap[ip]) rateLimitMap[ip] = [];
-    rateLimitMap[ip] = rateLimitMap[ip].filter(t => now - t < RATE_WINDOW);
-    if (rateLimitMap[ip].length >= RATE_LIMIT) {
+// ─── Защита от DDoS (express-rate-limit) ──────────────────────────────────────
+const limiter = rateLimit({
+    windowMs: 60 * 1000, // 1 минута
+    max: 500, // Максимум 500 запросов за окно с одного IP
+    handler: (req, res) => {
         res.status(429).json({ error: "Too many requests" });
-        return false;
     }
-    rateLimitMap[ip].push(now);
-    return true;
-}
+});
+app.use(limiter);
 
-setInterval(() => {
-    const now = Date.now();
-    for (const ip of Object.keys(rateLimitMap)) {
-        rateLimitMap[ip] = rateLimitMap[ip].filter(t => now - t < RATE_WINDOW);
-        if (rateLimitMap[ip].length === 0) delete rateLimitMap[ip];
-    }
-}, 5 * 60 * 1000);
-
-// ─── Валидация входных данных ─────────────────────────────────────────────────
+// ─── Валидация и экранирование HTML/RichText тегов (Защита от XSS) ───────────
 function sanitize(str, maxLen) {
     if (typeof str !== "string") return null;
-    return str.trim().substring(0, maxLen);
+    return str.trim().substring(0, maxLen)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 let serverMessages = {};
@@ -41,9 +31,8 @@ let onlineUsers = {};
 
 const ONLINE_TIMEOUT_MS  = 15000;  
 const CLEANUP_INTERVAL_MS = 60000; 
-const IDLE_CLEANUP_MS     = 5 * 60 * 1000; 
 
-// ─── Автоочистка пользователей и пустых серверов (Исправлено) ─────────────────
+// ─── Автоочистка пользователей и пустых серверов ─────────────────────────────
 setInterval(() => {
     const now = Date.now();
     
@@ -51,7 +40,6 @@ setInterval(() => {
         const users = onlineUsers[serverId];
         let hasActiveUsers = false;
 
-        // Поочередно удаляем каждого неактивного пользователя
         for (const user of Object.keys(users)) {
             if (now - users[user] > ONLINE_TIMEOUT_MS) {
                 delete users[user];
@@ -60,7 +48,6 @@ setInterval(() => {
             }
         }
 
-        // Если активных пользователей нет, проверяем необходимость удаления сервера
         if (!hasActiveUsers) {
             const messages = serverMessages[serverId] || [];
             if (messages.length === 0) {
@@ -74,7 +61,6 @@ setInterval(() => {
 
 // ─── Heartbeat ───────────────────────────────────────────────────────────────
 app.post('/heartbeat', (req, res) => {
-    if (!rateLimit(req, res)) return;
     const user     = sanitize(req.body.user, 50);
     const serverId = sanitize(req.body.serverId, 100);
     if (!user || !serverId) return res.status(400).json({ error: "Missing data" });
@@ -86,7 +72,6 @@ app.post('/heartbeat', (req, res) => {
 
 // ─── Отправка сообщения ────────────────────────────────────────────────────────
 app.post('/send', (req, res) => {
-    if (!rateLimit(req, res)) return;
     const user     = sanitize(req.body.user, 50);
     const msg      = sanitize(req.body.msg, 500);
     const serverId = sanitize(req.body.serverId, 100);
@@ -109,7 +94,6 @@ app.post('/send', (req, res) => {
 
 // ─── История сообщений ────────────────────────────────────────────────────────
 app.get('/history', (req, res) => {
-    if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
     res.json(serverMessages[serverId] || []);
@@ -117,7 +101,6 @@ app.get('/history', (req, res) => {
 
 // ─── Онлайн пользователи ──────────────────────────────────────────────────────
 app.get('/online', (req, res) => {
-    if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
 
@@ -131,7 +114,6 @@ app.get('/online', (req, res) => {
 
 // ─── Статистика сервера ───────────────────────────────────────────────────────
 app.get('/status', (req, res) => {
-    if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
     if (!serverId) return res.status(400).json({ error: "serverId is required" });
 

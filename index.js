@@ -4,7 +4,7 @@ app.use(express.json());
 
 const SERVER_START_TIME = Date.now();
 
-// ─── Rate limiting — увеличено до 500 запросов в минуту с одного IP ──────────
+// ─── Rate limiting ───────────────────────────────────────────────────────────
 const rateLimitMap = {};
 const RATE_LIMIT   = 500; 
 const RATE_WINDOW  = 60 * 1000;
@@ -36,35 +36,43 @@ function sanitize(str, maxLen) {
     return str.trim().substring(0, maxLen);
 }
 
-// { "serverId": [ {id, user, msg}, ... ] }
 let serverMessages = {};
-
-// { "serverId": { "username": lastSeenTimestamp } }
 let onlineUsers = {};
 
-const ONLINE_TIMEOUT_MS  = 15000;  // 15 сек без heartbeat = оффлайн
-const CLEANUP_INTERVAL_MS = 60000; // проверка каждую минуту
-const IDLE_CLEANUP_MS     = 5 * 60 * 1000; // чистим сервер если пуст 5+ минут
+const ONLINE_TIMEOUT_MS  = 15000;  
+const CLEANUP_INTERVAL_MS = 60000; 
+const IDLE_CLEANUP_MS     = 5 * 60 * 1000; 
 
-// ─── Автоочистка пустых серверов ─────────────────────────────────────────────
+// ─── Автоочистка пользователей и пустых серверов (Исправлено) ─────────────────
 setInterval(() => {
     const now = Date.now();
-    for (const serverId of Object.keys(serverMessages)) {
-        const users = onlineUsers[serverId] || {};
-        const hasActive = Object.values(users).some(ts => now - ts < ONLINE_TIMEOUT_MS);
-        if (hasActive) continue;
+    
+    for (const serverId of Object.keys(onlineUsers)) {
+        const users = onlineUsers[serverId];
+        let hasActiveUsers = false;
 
-        // Нет активных — смотрим когда последний раз кто-то был
-        const lastSeen = Math.max(0, ...Object.values(users));
-        if (lastSeen === 0 || now - lastSeen > IDLE_CLEANUP_MS) {
-            delete serverMessages[serverId];
-            delete onlineUsers[serverId];
-            console.log(`[cleanup] Cleared idle server: ${serverId}`);
+        // Поочередно удаляем каждого неактивного пользователя
+        for (const user of Object.keys(users)) {
+            if (now - users[user] > ONLINE_TIMEOUT_MS) {
+                delete users[user];
+            } else {
+                hasActiveUsers = true;
+            }
+        }
+
+        // Если активных пользователей нет, проверяем необходимость удаления сервера
+        if (!hasActiveUsers) {
+            const messages = serverMessages[serverId] || [];
+            if (messages.length === 0) {
+                delete serverMessages[serverId];
+                delete onlineUsers[serverId];
+                console.log(`[cleanup] Cleared idle server: ${serverId}`);
+            }
         }
     }
 }, CLEANUP_INTERVAL_MS);
 
-// ─── Heartbeat: клиент пингует каждые ~8 секунд ───────────────────────────────
+// ─── Heartbeat ───────────────────────────────────────────────────────────────
 app.post('/heartbeat', (req, res) => {
     if (!rateLimit(req, res)) return;
     const user     = sanitize(req.body.user, 50);
@@ -107,7 +115,7 @@ app.get('/history', (req, res) => {
     res.json(serverMessages[serverId] || []);
 });
 
-// ─── Онлайн пользователи на сервере ──────────────────────────────────────────
+// ─── Онлайн пользователи ──────────────────────────────────────────────────────
 app.get('/online', (req, res) => {
     if (!rateLimit(req, res)) return;
     const serverId = sanitize(req.query.serverId, 100);
@@ -142,7 +150,6 @@ app.get('/status', (req, res) => {
     });
 });
 
-// ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/', (_req, res) => {
     res.send("Chit-Chat server is running!");
 });
